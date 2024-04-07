@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Assignment 5</h1>
+<p>Try whistling, saying "hello" (trained with male voice), or emulate wind sounds (FSHH)</p>
+
+<!-- D3 Examples -->
+<div><h3>D3.js Examples</h3></div>
+<div><h2>Basic Visualization</h2></div>
+<div id="svg-container"></div>
+<div><h2>Pie Chart</h2></div>
+<div id="pie-chart-container" style="width: 600px; height: 400px;"></div>
+
+<!-- Plot Examples -->
+<div><h3>Observable Plot Examples</h3></div>
+<div><h2>Bar Chart</h2></div>
+<div id="plot-container"></div>
+<div><h2>Line/Plot Charts</h2></div>
+<div id="line-chart-container" style="width: 600px; height: 400px; background-color:grey;"></div>
+<div id="plot-map-container" style="width: 600px; height: 400px;"></div>
+<div><h2>Stream Graph</h2></div>
+<div id="streamgraph-container" style="width: 600px; height: 400px;"></div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.4.3/dist/plot.umd.js"></script>
+
+<script>
+const ws = new WebSocket("ws://localhost:8082");
+
+ws.addEventListener("open", () => {
+    console.log("We are connected");
+});
+
+// Bar Chart
+const categoryCounts = {
+    "Not Intelligible / Unidentified": 0,
+    "Whistling": 0,
+    "Human Male 'Hello'": 0,
+    "Static / Wind": 0,
+    "Unrecognized": 0
+};
+
+// Line chart
+const historicalData = {
+    "Not Intelligible / Unidentified": [],
+    "Whistling": [],
+    "Human Male 'Hello'": [],
+    "Static / Wind": [],
+    "Unrecognized": []
+};
+
+// Scatter Plot
+let plotMapData = [];
+
+const maxPoints = 65; // Adjust this value as needed
+const timeWindow = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+// Declare the svg before making edits to it.
+const svg = d3.select('#svg-container').append('svg')
+    .attr('width', 300)
+    .attr('height', 300);
+
+// Set the background color
+svg.append('rect')
+    .attr('width', '100%')
+    .attr('height', '100%')
+    .attr('fill', 'pink'); // Change 'lightgrey' to your desired background color
+
+const circle = svg.append('circle')
+    .attr('cx', 140)
+    .attr('cy', 60)
+    .attr('r', 40)
+    .style('fill', 'black');
+
+const text = svg.append('text')
+    .attr('x', 140)
+    .attr('y', 130)
+    .attr('text-anchor', 'middle')
+    .style('fill', 'black')
+    .text('');
+
+// Define category colors
+const categoryColors = {
+    "Not Intelligible / Unidentified": "blue",
+    "Whistling": "green",
+    "Human Male 'Hello'": "orange",
+    "Static / Wind": "pink",
+    "Unrecognized": "black"
+};
+
+// Pie Chart
+const pieWidth = 600; 
+const pieHeight = 400;
+const radius = Math.min(pieWidth, pieHeight) / 2; // Define the radius
+
+const pieSvg = d3.select('#pie-chart-container')
+    .append('svg')
+    .attr('width', pieWidth)
+    .attr('height', pieHeight)
+    .append('g')
+    .attr('transform', `translate(${pieWidth / 2}, ${pieHeight / 2})`);
+
+// const streamSvg = d3.select('#streamgraph-container')
+//     .attr('fill', 'red')
+
+// Inside the "message" event listener
+ws.addEventListener("message", (event) => {
+    const oscMsg = JSON.parse(event.data);
+    console.log("Received OSC message:", oscMsg);
+
+    if (oscMsg.address === "/wek/outputs") {
+        let color;
+        let labelText;
+        switch (oscMsg.args[0]) {
+            // case 0:
+            //     color = categoryColors["Not Intelligible / Unidentified"];
+            //     labelText = "Not Intelligible / Unidentified";
+            //     break;
+            case 1:
+                color = categoryColors["Not Intelligible / Unidentified"];
+                labelText = "Not Intelligible / Unidentified";
+                break;
+            case 2:
+                color = categoryColors["Whistling"];
+                labelText = "Whistling";
+                break;
+            case 3:
+                color = categoryColors["Not Intelligible / Unidentified"];
+                labelText = "Not Intelligible / Unidentified";
+                break;
+                case 4:
+                color = categoryColors["Human Male 'Hello'"];
+                labelText = "Human Male 'Hello'";
+                break;
+            case 5:
+                color = categoryColors["Static / Wind"];
+                labelText = "Static / Wind";
+                break;
+            default:
+                color = categoryColors["Unrecognized"];
+                labelText = "Unrecognized";
+        }
+
+        // Update circle color and text content
+        circle.style('fill', color);
+        text.text(labelText);
+
+        // Update category count and prepare data for the bar chart
+        if (labelText !== "") {
+            // Current Time
+            const currentTime = Date.now();
+
+            // Update Count
+            categoryCounts[labelText]++;
+
+            // Update Line Chart Data
+            historicalData[labelText].push({time: Date.now(), value: categoryCounts[labelText]});
+            console.log("Historical data:", historicalData);
+
+            // Update Max Points
+            if (historicalData[labelText].length > maxPoints) {
+                historicalData[labelText].shift(); // Remove the oldest data point
+            }
+
+   
+
+            // Update plotMapData
+            plotMapData = Object.entries(historicalData).flatMap(
+                ([category, values]) => values.map(d => ({
+                    category,
+                    time: d.time,
+                    value: d.value
+                }))
+            );
+
+            // Update Pie Chart Data
+            let pieChartData = Object.entries(categoryCounts).map(([category, value]) => ({category, value}));
+
+            // Set up pie generator and arc function
+            const pie = d3.pie().value(d => d.value);
+            const arc = d3.arc().innerRadius(0).outerRadius(radius);
+
+            // Bind the new data to the paths
+            const paths = pieSvg.selectAll('path')
+                .data(pie(pieChartData));
+
+            // Append new paths for new data
+            paths.enter()
+                .append('path')
+                .attr('d', arc)
+                .attr('fill', d => categoryColors[d.data.category]);
+
+            // Update existing paths
+            paths.attr('d', arc)
+                .attr('fill', d => categoryColors[d.data.category]);
+
+            // Remove old paths
+            paths.exit().remove();
+
+
+
+    // Update Bar Chart Data
+    const barChartData = Object.entries(categoryCounts).map(([category, value]) => ({category, value}));
+
+
+    // Update Line Chart Data
+    const lineChartData = Object.entries(historicalData).flatMap(
+        ([category, values]) => values.map(d => ({category, time: d.time, value: d.value})) 
+    );
+
+    // Update Streamgraph Data
+    const streamgraphData = Object.entries(historicalData).flatMap(
+        ([category, values]) => values.map(d => ({
+            category,
+            time: new Date(d.time),
+            value: d.value
+        }))
+    );
+
+    // Update and append the charts
+    const chart = Plot.plot({
+        y: { label: "Count" },
+        marks: [
+            Plot.barY(barChartData, {x: "category", y: "value", fill: d => categoryColors[d.category]})
+        ]
+    });
+
+    const lineChart = Plot.plot({
+        x: { label: "Time", tickFormat: d => new Date(d).toLocaleTimeString() },
+        y: { label: "Count" },
+        marks: [
+            Plot.line(lineChartData, {x: "time", y: "value", stroke: d => categoryColors[d.category]}),
+            Plot.dot(lineChartData, {x: "time", y: "value", fill: d => categoryColors[d.category]})
+        ]
+    });
+
+    const plotMap = Plot.plot({
+        x: { label: "Time", tickFormat: d => new Date(d).toLocaleTimeString() },
+        y: { label: "Value" },
+        marks: [
+            Plot.dot(plotMapData, {x: "time", y: "value", fill: d => categoryColors[d.category]})
+        ]
+    });
+
+    const streamgraph = Plot.plot({
+        x: { label: "Time", tickFormat: d => d.toLocaleTimeString() },
+        y: { label: "Value" },
+        marks: [
+            Plot.areaY(streamgraphData, {x: "time", y: "value", fill: d => categoryColors[d.category], curve: "natural", order: "stack"})
+        ]
+    });
+                    // Remove the old chart and append the new one
+                    d3.select("#plot-container").selectAll("*").remove();
+                    d3.select("#plot-container").node().appendChild(chart);
+
+                    // Remove the old line chart and append the new one
+                    d3.select("#line-chart-container").selectAll("*").remove();
+                    d3.select("#line-chart-container").node().appendChild(lineChart);
+
+                    // Remove the old scatter plot and append the new one
+                    d3.select("#plot-map-container").selectAll("*").remove();
+                    d3.select("#plot-map-container").node().appendChild(plotMap);
+
+                    // Remove old streamgraph and append the new one
+                    d3.select("#streamgraph-container").selectAll("*").remove();
+                    d3.select("#streamgraph-container").node().appendChild(streamgraph);
+
+        }
+    }
+});
+
+</script>
+</body>
+</html>

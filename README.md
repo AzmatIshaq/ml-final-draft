@@ -1,2 +1,2 @@
 # ml-final-draft
- This is a report for the draft of the ml final project.
+ This is a repo for the draft of the ml final project.
