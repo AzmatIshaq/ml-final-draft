@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Data Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6"></script>
+   
+</head>
+<body>
+    <h1>Real-Time Music Visualization</h1>
+    <div id="chart"></div>
+
+    <script>
+
+     window.addEventListener('DOMContentLoaded', (event) => {
+     const ws = new WebSocket("ws://localhost:6441");
+        let pitchData = [];
+        let jsonData = [];
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.address === '/wek/inputs' && data.args.length > 0) {
+                const pitch = data.args[0];
+                if (!isNaN(pitch)) {
+                    pitchData.push({ time: Date.now(), pitch: pitch });
+                    updatePlot();
+                }
+            }
+        };
+
+        fetch('http://localhost:3000/data')
+            .then(response => response.json())
+            .then(data => {
+                const baselineTime = Date.now();
+                jsonData = data.map(d => ({
+                    time: baselineTime + d.time * 1000,
+                    frequency: d.frequency
+                }));
+                updatePlot();
+            });
+
+        function updatePlot() {
+            const plotData = [
+                {values: pitchData, style: {stroke: "blue"}},
+                {values: jsonData, style: {stroke: "red"}}
+            ];
+            const plot = Plot.plot({
+                x: {
+                    axis: "bottom",
+                    transform: d => new Date(d),
+                    label: "Time →"
+                },
+                y: {
+                    axis: "left",
+                    label: "Pitch/Frequency →"
+                },
+                marks: [
+                    Plot.line(plotData[0].values, {x: "time", y: "pitch", stroke: plotData[0].style.stroke}),
+                    Plot.line(plotData[1].values, {x: "time", y: "frequency", stroke: plotData[1].style.stroke})
+                ],
+                width: 800,
+                height: 400
+            });
+            document.getElementById('chart').replaceChildren(plot);
+        }
+
+        setInterval(() => {
+            const now = Date.now();
+            pitchData = pitchData.filter(d => d.time > now - 10000); // Keep only last 10 seconds
+            jsonData = jsonData.map(d => ({ ...d, time: now - (10000 - (d.time - baselineTime)) }));
+            updatePlot();
+        }, 1000); // Update plot every second
+
+     });
+    </script>
+</body>
+</html>

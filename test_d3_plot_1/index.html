@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <h1>Plotting Music</h1>
+    <p></p>
+
+    <!-- D3 Line Chart -->
+    <div id="line-chart-container" style="width: 800px; height: 400px;"></div>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.4.3/dist/plot.umd.js"></script>
+
+    <script>
+const ws = new WebSocket("ws://localhost:6441");
+
+ws.addEventListener("open", () => {
+    console.log("WebSocket connected");
+});
+
+// Data for line chart
+let pitchData = [];
+
+// Create the initial line chart
+let lineChart = createLineChart();
+
+// Append the initial line chart to the container
+document.getElementById("line-chart-container").appendChild(lineChart);
+
+// Listen for incoming pitch data
+ws.addEventListener("message", (event) => {
+    const oscMsg = JSON.parse(event.data);
+    if (oscMsg.address === "/wek/inputs") {
+        const pitch = oscMsg.args[0];
+        const time = Date.now();
+        pitchData.push({ time, pitch });
+
+        // console.log(oscMsg);
+
+        // Limit the number of data points to display
+        const maxDataPoints = 10;
+        if (pitchData.length > maxDataPoints) {
+            const excess = pitchData.length - maxDataPoints;
+            pitchData.splice(0, excess); // Remove excess data points from the beginning
+        }
+
+        // Remove the old line chart
+        lineChart.remove();
+
+        // Create a new line chart with updated pitchData and smooth interpolation
+        lineChart = createLineChart();
+
+        // Append the new line chart to the container
+        document.getElementById("line-chart-container").appendChild(lineChart);
+    }
+});
+
+// Function to process frequency as notes
+// function frequencyToNote(frequency) {
+//     const A4 = 440; // Frequency of A4 in Hz
+//     const semitoneRatio = Math.pow(2, 1 / 12); // Ratio of a semitone
+
+//     // Calculate the number of semitones from A4
+//     const semitones = Math.round(12 * Math.log2(frequency / A4));
+
+//     // Determine the note name and octave
+//     const notes = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"];
+//     const noteIndex = (semitones + 120) % 12; // Ensure positive note index
+//     const octave = Math.floor((semitones + 120) / 12) - 1; // Calculate octave
+
+//     return notes[noteIndex] + octave;
+// }
+
+
+
+// Function to create a line chart
+function createLineChart() {
+    return Plot.plot({
+        x: { label: "Time", tickFormat: d => new Date(d).toLocaleTimeString() },
+        y: { label: "Pitch", domain: [0, 3000] }, // Set the y-axis domain from 0 to 2000
+        grid: true, // Add grid lines to the chart
+        marks: [
+            Plot.line(pitchData, {
+                x: "time",
+                y: "pitch",
+                stroke: "blue",
+                curve: d3.curveCatmullRom // Use d3.curveCatmullRom for a smooth interpolation
+            }),
+            Plot.dot(pitchData, { x: "time", y: "pitch", fill: "blue" })
+        ],
+        width: 800,
+        height: 400
+    });
+}
+
+
+    </script>
+</body>
+
+</html>

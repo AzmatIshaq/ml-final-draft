@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+
+<body>
+    <h1>Plotting Music</h1>
+    <div id="line-chart-container" style="width: 800px; height: 400px;"></div>
+    <script>
+        const ws = new WebSocket("ws://localhost:6441");
+        let pitchData = [];
+        let jsonData = [];
+        let baselineTime = new Date();
+
+        ws.addEventListener("open", () => {
+            console.log("WebSocket connected");
+        });
+
+        ws.addEventListener("close", () => {
+            console.log("WebSocket disconnected");
+        });
+
+        const margin = { top: 20, right: 20, bottom: 30, left: 50 };
+        const width = 800 - margin.left - margin.right;
+        const height = 400 - margin.top - margin.bottom;
+
+        const xScale = d3.scaleTime().range([0, width]).domain([new Date() - 10000, new Date()]);
+        const yScale = d3.scaleLinear().range([height, 0]).domain([10, 1000]);
+
+        const svg = d3.select("#line-chart-container")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        const xAxis = svg.append("g")
+            .attr("class", "x axis")
+            .attr("transform", "translate(0," + height + ")")
+            .call(d3.axisBottom(xScale));
+
+        const yAxis = svg.append("g").call(d3.axisLeft(yScale));
+
+        const userLineGenerator = d3.line()
+            .x(d => xScale(d.time))
+            .y(d => yScale(d.pitch))
+            .curve(d3.curveCatmullRom);
+
+        const liveLine = svg.append("path")
+            .attr("class", "line")
+            .attr("fill", "none")
+            .attr("stroke", "blue")
+            .attr("stroke-width", 2);
+
+        let hardCodedLineGenerator = d3.line()
+            .x(d => xScale(d.time))
+            .y(d => yScale(d.frequency))
+            .curve(d3.curveCatmullRom);
+
+        let hardcodedLine = svg.append("path")
+            .attr("class", "line2")
+            .attr("fill", "none")
+            .attr("stroke", "red")
+            .attr("stroke-width", 2);
+
+        ws.addEventListener("message", (event) => {
+            const data = JSON.parse(event.data);
+            if (data.address === '/wek/inputs' && data.args.length > 0) {
+                const pitch = data.args[0];
+                if (!isNaN(pitch) && Math.log(pitch) !== -Infinity) {
+                    const now = new Date();
+                    pitchData.push({ time: now, pitch: pitch });
+                }
+            }
+        });
+
+        fetch('http://localhost:3000/data')
+            .then(response => response.json())
+            .then(data => {
+                baselineTime = new Date();
+                jsonData = data.map(d => ({
+                    originalTime: d.time * 1000, // Save the time offset in milliseconds
+                    frequency: d.frequency
+                }));
+                updateChart(); // Initial update
+            });
+
+        function updateXScale() {
+            const now = new Date();
+            xScale.domain([new Date(now.getTime() - 10000), now]);
+            svg.select(".x.axis").call(d3.axisBottom(xScale));
+        }
+
+        function updateChart() {
+            const now = new Date();
+            // Update the times based on the current time and their original offsets
+            jsonData.forEach(d => {
+                d.time = new Date(now.getTime() - (10000 - d.originalTime));
+            });
+
+            pitchData = pitchData.filter(d => d.time >= xScale.domain()[0] && d.time <= xScale.domain()[1]);
+            jsonData = jsonData.filter(d => d.time >= xScale.domain()[0] && d.time <= xScale.domain()[1]);
+
+            liveLine.datum(pitchData).attr("d", userLineGenerator);
+            hardcodedLine.datum(jsonData).attr("d", hardCodedLineGenerator);
+
+            xAxis.call(d3.axisBottom(xScale));
+            yAxis.call(d3.axisLeft(yScale));
+        }
+
+        setInterval(updateXScale, 1000);
+        setInterval(updateChart, 200);
+    </script>
+</body>
+
+</html>

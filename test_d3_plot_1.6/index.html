@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+
+<body>
+    <h1>Plotting Music</h1>
+    <div id="line-chart-container" style="width: 800px; height: 400px;"></div>
+    <script>
+        const ws = new WebSocket("ws://localhost:6441");
+        // Variable to manage user input
+        let pitchData = [];
+        // Variable to manage hardcoded song data
+        let jsonData = [];
+        let pointCounter = 0;
+        let lastPitch = null; // Initialize lastPitch as null
+
+        ws.addEventListener("open", () => {
+            console.log("WebSocket connected");
+        });
+
+        ws.addEventListener("close", () => {
+            console.log("WebSocket disconnected");
+        });
+
+        // D3 chart setup
+        const margin = { top: 20, right: 20, bottom: 30, left: 50 };
+        const width = 800 - margin.left - margin.right;
+        const height = 400 - margin.top - margin.bottom;
+
+        // D3 chart setup for live data line
+        const xScale = d3.scaleLinear().range([0, width]).domain([0, 100]); // Display 100 points at a time
+        const yScale = d3.scaleLinear().range([height, 0]).domain([10, 1000]);
+        // For logarithmic y axis visuals
+        // const yScale = d3.scaleLog().range([height, 0]).domain([10, 1000]);
+
+
+        // Setup the SVG container
+        const svg = d3.select("#line-chart-container")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        // For displaying axis
+        const xAxis = svg.append("g")
+            .attr("transform", "translate(0," + height + ")")
+            .call(d3.axisBottom(xScale));
+
+        const yAxis = svg.append("g")
+            .call(d3.axisLeft(yScale));
+
+
+        const lineGenerator = d3.line()
+            .x(d => xScale(d.point))
+            .y(d => yScale(d.pitch))
+            // This can cause the interpolation issue
+            .curve(d3.curveCatmullRom);
+        // This fixes it somewhat but the visual loses detail
+        // .curve(d3.curveLinear);
+
+
+
+        // Create path for live data line
+        const liveLine = svg.append("path")
+            .attr("class", "line")
+            .attr("fill", "none")
+            .attr("stroke", "blue")
+            .attr("stroke-width", 2);
+
+
+        function updateChart() {
+            // Increment the point counter and use the last pitch value
+            pitchData.push({ point: ++pointCounter, pitch: lastPitch || 0 });
+
+            // Shift the xScale domain to keep the line moving
+            xScale.domain([pointCounter - 100, pointCounter]);
+
+            // Update the live data line path with the current pitch data
+            liveLine
+                .datum(pitchData)
+                .attr("d", lineGenerator);
+
+            // Update the axes
+            xAxis.call(d3.axisBottom(xScale));
+            yAxis.call(d3.axisLeft(yScale));
+
+            // Limit the number of data points to display
+            if (pitchData.length > 100) {
+                pitchData.shift(); // Remove the oldest data point
+            }
+        }
+
+        // Update the chart at a regular interval (e.g., every 200ms)
+        setInterval(updateChart, 200);
+
+        ws.addEventListener("message", (event) => {
+            const data = JSON.parse(event.data);
+            if (data.address === '/wek/inputs' && data.args.length > 0) {
+                const pitch = data.args[0];
+                if (!isNaN(pitch) && Math.log(pitch) !== -Infinity) {
+                    lastPitch = pitch; // Update the last known pitch value
+                }
+            }
+        });
+
+        // Placeholder for hard-coded line initialization
+        // Initialize and update hardCodedLine here
+        fetch('http://localhost:3000/data')
+            .then(response => response.json())
+            .then(data => {
+                jsonData = data; // Assuming 'data' is the array of points for your line
+                // console.log("Loaded line2 data:", jsonData);
+                // Don't need this twice
+                // updateChart(); // Call to update your D3 visualization with new data
+
+                // fetch loads data asychronously so we can put visualization code here to avoid errors
+                // If we really need to move the code somewhere else we can do so by accounting for the 
+                // asychronous nature of the data
+
+                
+           
+            })
+            .catch(error => console.error('Error loading JSON:', error));
+
+    </script>
+</body>
+
+</html>

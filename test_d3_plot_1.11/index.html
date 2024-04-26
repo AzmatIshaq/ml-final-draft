@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+
+<body>
+    <h1>Plotting Music</h1>
+    <div id="line-chart-container" style="width: 800px; height: 400px;"></div>
+    <script>
+        const ws = new WebSocket("ws://localhost:6441");
+        // Variable to manage user input
+        let pitchData = [];
+        // Variable to manage hardcoded song data
+        let jsonData = [];
+        // Initialize these outside of fetch to hard coded line data accessible for updates
+        let hardCodedLineGenerator, hardcodedLine;
+
+        let lastPitch = null; // Initialize lastPitch as null
+
+        ws.addEventListener("open", () => {
+            console.log("WebSocket connected");
+        });
+
+        ws.addEventListener("close", () => {
+            console.log("WebSocket disconnected");
+        });
+
+        // D3 chart setup
+        const margin = { top: 20, right: 20, bottom: 30, left: 50 };
+        const width = 800 - margin.left - margin.right;
+        const height = 400 - margin.top - margin.bottom;
+
+        const now = new Date();  // Capture the current time
+        const xScale = d3.scaleTime()
+            .range([0, width])
+            .domain([new Date(now.getTime() - 10000), now]);  // Display the last 10 seconds
+
+        const yScale = d3.scaleLinear().range([height, 0]).domain([10, 1000]);
+        // For logarithmic y axis visuals
+        // const yScale = d3.scaleLog().range([height, 0]).domain([10, 1000]);
+
+
+        // Setup the SVG container
+        const svg = d3.select("#line-chart-container")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        // For displaying axis
+        const xAxis = svg.append("g")
+            .attr("class", "x axis")
+            .attr("transform", "translate(0," + height + ")")
+            .call(d3.axisBottom(xScale));
+
+
+        const yAxis = svg.append("g")
+            .call(d3.axisLeft(yScale));
+
+
+        const userLineGenerator = d3.line()
+            .x(d => xScale(d.time)) // Use 'time' instead of 'point'
+            .y(d => yScale(d.pitch))
+            .curve(d3.curveCatmullRom); // Choose the curve based on your visualization needs
+        // // This fixes it somewhat but the visual loses detail
+        // // .curve(d3.curveLinear);
+
+
+
+
+        // Create path for live data line
+        const liveLine = svg.append("path")
+            .attr("class", "line")
+            .attr("fill", "none")
+            .attr("stroke", "blue")
+            .attr("stroke-width", 2);
+
+        // Update the x axis time
+        function updateXScale() {
+            const now = new Date();  // Update to the current time
+            xScale.domain([new Date(now.getTime() - 10000), now]);  // Last 10 seconds
+            svg.select(".x.axis").call(d3.axisBottom(xScale)
+                .ticks(d3.timeSecond.every(1))  // Ensure ticks every second
+                .tickFormat(d3.timeFormat("%S s")));  // Format ticks to show seconds only
+        }
+
+
+
+        // Data from websocket converted to javascript object.
+        ws.addEventListener("message", (event) => {
+            const data = JSON.parse(event.data);
+            if (data.address === '/wek/inputs' && data.args.length > 0) {
+                const pitch = data.args[0];
+                if (!isNaN(pitch) && Math.log(pitch) !== -Infinity) {
+                    const now = new Date(); // Capture the current time when the data is received
+                    pitchData.push({ time: now, pitch: pitch }); // Append new data with a timestamp
+                }
+            }
+        });
+
+        
+        // Fetch loads data asychronously so we can put visualization code here to avoid errors
+        // If we really need to move the code somewhere else we can do so by accounting for the 
+        // asychronous nature of the data
+        // Hardcoded data line
+        fetch('http://localhost:3000/data')
+            .then(response => response.json())
+            .then(data => {
+                jsonData = data; // Assuming 'data' is the array of points for your line
+                // console.log("Loaded line2 data:", jsonData);
+
+                // To confirm data is accessible
+                console.log("Here is the confidence for 0: " + jsonData[0].confidence);
+
+                console.log("Data loaded, starting simulation...");
+                data.forEach(d => {
+                // Convert time in seconds to milliseconds and set up a timeout
+                setTimeout(() => {
+                    console.log(`At time ${d.time}s: Frequency = ${d.frequency}`);
+                }, d.time * 1000); // Multiply by 1000 to convert seconds to milliseconds
+                });
+                // const baselineTime = new Date(); // Establish a baseline time when data is loaded
+                // jsonData = data.map(d => ({
+                //     time: new Date(baselineTime.getTime() + d.time * 1000), // Convert time in seconds to Date
+                //     frequency: d.frequency,
+                //     confidence: d.confidence,
+                //     offset: d.time * 1000  // Store the original offset in milliseconds
+                // }));
+
+
+
+                // Setup the line generator for hardcoded data
+                // const hardCodedLineGenerator = d3.line()
+                //     .x(d => xScale(d.time))
+                //     .y(d => yScale(d.frequency))
+                //     .curve(d3.curveCatmullRom); // Or any other curve you see fit
+
+                // Create and update the path for hardcoded data
+                // const hardcodedLine = svg.append("path")
+                //     .attr("class", "line2")
+                //     .attr("fill", "none")
+                //     .attr("stroke", "red")
+                //     .attr("stroke-width", 2)
+                //     .datum(jsonData) // Bind the prepared jsonData
+                //     .attr("d", hardCodedLineGenerator);
+
+            })
+            .catch(error => console.error('Error loading JSON:', error));
+
+            
+        // Update the chart
+
+        function updateChart() {
+    const now = new Date(); // Get the current time for each update cycle
+
+    // Update the timestamps for JSON data based on their original offset
+    jsonData = jsonData.map(d => ({
+        time: new Date(now.getTime() - (10000 - d.offset)), // Adjust time based on original offset within last 10 seconds window
+        frequency: d.frequency,
+        confidence: d.confidence
+    }));
+
+    // Filter out data points that are now out of the 10-second view window
+    pitchData = pitchData.filter(d => d.time >= now - 10000);
+    jsonData = jsonData.filter(d => d.time >= now - 10000);
+
+    // Update the paths for both live and hardcoded lines
+    if (pitchData.length > 0) {
+        liveLine.datum(pitchData).attr("d", userLineGenerator);
+    }
+    if (jsonData.length > 0) {
+        hardcodedLine.datum(jsonData).attr("d", hardCodedLineGenerator);
+    }
+
+    // Update the axis
+    xAxis.call(d3.axisBottom(xScale));
+    yAxis.call(d3.axisLeft(yScale));
+}
+
+
+
+        // Update x axis. You can change the value to adjust how fast the visualization moves in the viewport.
+        setInterval(updateXScale, 100);  // Update every second
+        // Update the chart at a regular interval (e.g., every 200ms)
+        setInterval(updateChart, 200);
+
+    </script>
+</body>
+
+</html>
